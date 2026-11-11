@@ -94,7 +94,7 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
         return {
             "status": "online",
             "database_name": db_info.get("database_name"),
-            "storage_location": "Desktop (price_database)" if settings.use_desktop_storage else "Local (data/)",
+            "storage_location": "Desktop (price_database)" if settings.use_desktop_storage else "Local Project (data/price_database)",
             "sqlite_path": str(svc.sqlite_db.db_path),
             "faiss_path": str(svc.vector_db.persist_directory) if svc.vector_db else None,
             "source_excel_file": db_info.get("source_excel_file"),

@@ -87,10 +87,20 @@ class VectorDatabase:
             raise
 
     def clear(self) -> None:
-        """Clear FAISS index and metadata for a fresh rebuild."""
+        """Clear FAISS index and metadata for a fresh rebuild, removing old disk files first."""
         import faiss
         self.index = faiss.IndexFlatIP(self.dim)
         self.metadata = []
+        if self.index_path.exists():
+            try:
+                self.index_path.unlink()
+            except Exception as e:
+                logger.warning(f"Could not unlink old index file {self.index_path}: {e}")
+        if self.meta_path.exists():
+            try:
+                self.meta_path.unlink()
+            except Exception as e:
+                logger.warning(f"Could not unlink old metadata file {self.meta_path}: {e}")
         self._save_to_disk()
         logger.info(f"Cleared FAISS VectorDatabase at {self.persist_directory}")
 

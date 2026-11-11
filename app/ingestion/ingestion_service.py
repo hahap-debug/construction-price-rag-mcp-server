@@ -246,6 +246,7 @@ class IngestionService:
 
         # 4. Save to SQLite (Source of Truth)
         if clean_rebuild:
+            logger.info("Wiping all existing SQLite records and FAISS vector index before inserting fresh data (Clean Rebuild)...")
             self.sqlite_db.clear_all_records()
             if self.vector_db is not None:
                 self.vector_db.clear()

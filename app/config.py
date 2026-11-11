@@ -31,19 +31,19 @@ class AppSettings(BaseSettings):
 
     # Database
     use_desktop_storage: bool = Field(
-        default=True,
+        default=False,
         description="Whether to store database and FAISS index on user Desktop folder",
     )
     desktop_folder_name: str = Field(
         default="price_database",
-        description="Folder name on user Desktop for database storage",
+        description="Folder name for database storage",
     )
     sqlite_db_path: str = Field(
-        default="data/price.db",
+        default="data/price_database/price.db",
         description="Path to SQLite database file",
     )
     faiss_index_dir: str = Field(
-        default="data/faiss_index",
+        default="data/price_database/faiss_index",
         description="Directory for FAISS index and metadata storage",
     )
     chroma_persist_directory: str = Field(
@@ -99,20 +99,24 @@ class AppSettings(BaseSettings):
             return fallback
 
     def get_sqlite_path(self) -> Path:
-        """Resolve SQLite path on Desktop price_database folder or configured path."""
+        """Resolve SQLite path in data/price_database or configured path."""
         if self.use_desktop_storage:
             return self.get_desktop_dir() / "price.db"
         p = Path(self.sqlite_db_path)
-        return p if p.is_absolute() else PROJECT_ROOT / p
+        path = p if p.is_absolute() else PROJECT_ROOT / p
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
     def get_faiss_dir(self) -> Path:
-        """Resolve FAISS directory on Desktop price_database folder or configured path."""
+        """Resolve FAISS directory in data/price_database or configured path."""
         if self.use_desktop_storage:
             faiss_p = self.get_desktop_dir() / "faiss_index"
             faiss_p.mkdir(parents=True, exist_ok=True)
             return faiss_p
         p = Path(self.faiss_index_dir)
-        return p if p.is_absolute() else PROJECT_ROOT / p
+        path = p if p.is_absolute() else PROJECT_ROOT / p
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def get_chroma_dir(self) -> Path:
         """Resolve Chroma directory against project root if relative."""
