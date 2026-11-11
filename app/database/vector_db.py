@@ -171,6 +171,32 @@ class VectorDatabase:
         self._save_to_disk()
         return len(records)
 
+    @staticmethod
+    def _extract_numeric_tokens(text: str) -> set[str]:
+        """Extract standalone numeric tokens from text for dynamic spec verification."""
+        import re
+        return set(re.findall(r"\b\d+(?:\.\d+)?\b", text))
+
+    def _score_candidate(
+        self,
+        base_score: float,
+        query_text: str,
+        doc_text: str,
+        q_numbers: set[str],
+    ) -> float:
+        """Apply dynamic soft scoring using numeric token verification to prevent number blindness."""
+        sim_score = max(0.0, min(1.0, base_score))
+        if not q_numbers:
+            return round(sim_score, 4)
+
+        doc_numbers = self._extract_numeric_tokens(doc_text)
+        if q_numbers & doc_numbers:
+            sim_score = min(1.0, sim_score + 0.05)
+        elif doc_numbers:
+            sim_score = max(0.0, sim_score - 0.12)
+
+        return round(sim_score, 4)
+
     def query_semantic(
         self,
         query: str,
@@ -188,6 +214,8 @@ class VectorDatabase:
             raw_query_emb = self.embedding_provider.embed_query(clean_q)
             q_emb = np.ascontiguousarray([raw_query_emb], dtype=np.float32)
             faiss.normalize_L2(q_emb)
+
+            q_numbers = self._extract_numeric_tokens(clean_q)
 
             # Retrieve top candidates (search full index when post-filtering by record_type or unit)
             if (record_type and record_type != "all") or unit:
@@ -213,38 +241,96 @@ class VectorDatabase:
                     if norm_q_unit != m_norm and meta.get("normalized_unit") != unit and meta.get("unit") != unit:
                         continue
 
-                sim_score = max(0.0, min(1.0, float(score)))
+                sim_score = self._score_candidate(
+                    float(score), clean_q, meta.get("document", ""), q_numbers
+                )
                 candidates.append({
                     "price_id": meta["price_id"],
                     "distance": round(float(1.0 - sim_score), 4),
-                    "similarity_score": round(sim_score, 4),
+                    "similarity_score": sim_score,
                     "document": meta.get("document", ""),
                     "retrieval_method": "semantic",
                 })
 
-                if len(candidates) >= n_results:
-                    break
-
-            return candidates
+            candidates.sort(key=lambda c: c["similarity_score"], reverse=True)
+            return candidates[:n_results]
         except Exception as e:
             logger.warning(f"FAISS semantic search failed: {e}. Falling back gracefully.")
             return []
 
+    def query_semantic_batch(
+        self,
+        queries: list[str],
+        n_results: int = 5,
+        record_type: str | None = None,
+        units: list[str | None] | None = None,
+    ) -> list[list[dict[str, Any]]]:
+        """Perform vectorized batch semantic search against FAISS for multiple queries in parallel."""
+        if not queries or self.count() == 0:
+            return [[] for _ in queries]
+        import faiss
+
+        try:
+            clean_queries = [q.strip() for q in queries]
+            raw_embs = self.embedding_provider.embed_documents(clean_queries)
+            q_embs = np.ascontiguousarray(raw_embs, dtype=np.float32)
+            faiss.normalize_L2(q_embs)
+
+            needs_full_scan = (record_type and record_type != "all") or (units and any(units))
+            k_search = self.count() if needs_full_scan else min(max(n_results * 10, 50), self.count())
+            all_distances, all_indices = self.index.search(q_embs, k_search)
+
+            results: list[list[dict[str, Any]]] = []
+            for q_idx, q_text in enumerate(clean_queries):
+                target_unit = units[q_idx] if units and q_idx < len(units) else None
+                distances = all_distances[q_idx]
+                indices = all_indices[q_idx]
+                q_numbers = self._extract_numeric_tokens(q_text)
+
+                candidates: list[dict[str, Any]] = []
+                for score, idx in zip(distances, indices):
+                    if idx < 0 or idx >= len(self.metadata):
+                        continue
+                    meta = self.metadata[idx]
+                    if record_type and record_type != "all" and meta.get("record_type") != record_type:
+                        continue
+                    if target_unit:
+                        from app.ingestion.data_normalizer import DataNormalizer
+                        norm_q_unit = DataNormalizer.resolve_query_unit(target_unit)
+                        m_norm = DataNormalizer.resolve_query_unit(meta.get("normalized_unit") or meta.get("unit"))
+                        if norm_q_unit != m_norm and meta.get("normalized_unit") != target_unit and meta.get("unit") != target_unit:
+                            continue
+
+                    sim_score = self._score_candidate(
+                        float(score), q_text, meta.get("document", ""), q_numbers
+                    )
+                    candidates.append({
+                        "price_id": meta["price_id"],
+                        "distance": round(float(1.0 - sim_score), 4),
+                        "similarity_score": sim_score,
+                        "document": meta.get("document", ""),
+                        "retrieval_method": "semantic_batch",
+                    })
+
+                candidates.sort(key=lambda c: c["similarity_score"], reverse=True)
+                results.append(candidates[:n_results])
+
+            return results
+        except Exception as e:
+            logger.warning(f"FAISS batch search failed: {e}. Falling back to iterative search.")
+            return [
+                self.query_semantic(
+                    q,
+                    n_results=n_results,
+                    record_type=record_type,
+                    unit=units[i] if units else None,
+                )
+                for i, q in enumerate(queries)
+            ]
+
     def count(self) -> int:
         """Return the number of vectors stored in the index."""
         return self.index.ntotal if self.index is not None else 0
-
-    def clear(self) -> None:
-        """Clear all records in the index and delete storage files."""
-        import faiss
-
-        self.index = faiss.IndexFlatIP(self.dim)
-        self.metadata = []
-        if self.index_path.exists():
-            self.index_path.unlink()
-        if self.meta_path.exists():
-            self.meta_path.unlink()
-        logger.info(f"Cleared FAISS VectorDatabase at {self.persist_directory}")
 
 
 # Class alias for explicit FAISS naming

@@ -5,14 +5,16 @@ from app.services.price_service import PriceService
 
 
 def test_mcp_server_tool_registration():
-    """Verify match_material, rebuild_price_database, and get_database_status are registered."""
+    """Verify all 5 tools are registered on the FastMCP server."""
     provider = mcp._local_provider
     registered_keys = list(provider._components.keys())
 
     assert "tool:match_material@" in registered_keys
     assert "tool:rebuild_price_database@" in registered_keys
     assert "tool:get_database_status@" in registered_keys
-    assert len(registered_keys) == 3
+    assert "tool:batch_match_prices@" in registered_keys
+    assert "tool:export_boq_cost_records@" in registered_keys
+    assert len(registered_keys) == 5
 
 
 def test_mcp_rebuild_price_database_tool():
@@ -158,3 +160,63 @@ def test_mcp_match_bim_element_tool():
     assert "C12" in first["item_name"]
     assert "unit_price" in first
     assert float(first["unit_price"]) > 0
+
+
+def test_mcp_batch_match_prices_tool():
+    """Verify batch_match_prices tool processes multiple BIM items in parallel."""
+    tool = mcp._local_provider._components["tool:batch_match_prices@"]
+    batch_input = [
+        {"id": "JOB-01", "query": "คอนกรีต 240 ksc", "unit": "ลบ.ม.", "standard_label": "RC_COLUMN"},
+        {"id": "JOB-02", "query": "เหล็กข้ออ้อย DB12", "unit": "กก.", "standard_label": "REBAR"},
+        {"id": "JOB-03", "query": "ค่าแรงเทคอนกรีต", "unit": "ลบ.ม.", "standard_label": "CONCRETE_POURING"},
+    ]
+    res = tool.fn(items=batch_input)
+
+    assert res["status"] in ("success", "partial")
+    assert res["total_queries"] == 3
+    assert len(res["items"]) == 3
+
+    # Check job 1
+    job1 = res["items"][0]
+    assert job1["item_id"] == "JOB-01"
+    assert job1["confidence_score"] > 0.0
+    assert job1["cost_record"] is not None
+    assert float(job1["cost_record"]["material_rate"]) > 0 or float(job1["cost_record"]["labor_rate"]) > 0
+
+    # Check job 2
+    job2 = res["items"][1]
+    assert job2["item_id"] == "JOB-02"
+    assert "REBAR" in job2["cost_record"]["standard_labels"]
+
+
+def test_mcp_export_boq_cost_records_tool():
+    """Verify export_boq_cost_records outputs valid CostRecord schema for Rule-BOQ."""
+    tool = mcp._local_provider._components["tool:export_boq_cost_records@"]
+    res = tool.fn(limit=5)
+
+    assert isinstance(res, list)
+    assert len(res) == 5
+    first = res[0]
+    assert "cost_code" in first
+    assert "description" in first
+    assert "unit" in first
+    assert "material_rate" in first
+    assert "labor_rate" in first
+    assert first["approved"] is False
+
+
+def test_price_service_match_composite_rate():
+    """Verify dynamic composite rate assembly for material + labor."""
+    svc = PriceService()
+    res = svc.match_composite_rate(
+        query="คอนกรีตเสา ค.ส.ล. 240 ksc",
+        unit="ลบ.ม.",
+        standard_label="RC_COLUMN",
+    )
+
+    assert res["status"] in ("matched", "requires_review")
+    assert res["confidence_score"] > 0.0
+    cost_rec = res["cost_record"]
+    assert cost_rec["unit"] == "ลบ.ม."
+    assert float(cost_rec["unit_rate"]) > 0
+

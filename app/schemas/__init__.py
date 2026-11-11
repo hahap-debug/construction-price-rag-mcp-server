@@ -8,6 +8,12 @@ from app.schemas.price_record import (
     DatabaseInfo,
     ImportReport,
 )
+from app.schemas.cost_record import (
+    CostRecord,
+    BatchMatchItem,
+    BatchMatchResultItem,
+    BatchMatchResponse,
+)
 
 __all__ = [
     "PriceRecord",
@@ -16,4 +22,8 @@ __all__ = [
     "PriceRecordResponse",
     "DatabaseInfo",
     "ImportReport",
+    "CostRecord",
+    "BatchMatchItem",
+    "BatchMatchResultItem",
+    "BatchMatchResponse",
 ]

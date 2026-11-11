@@ -55,21 +55,69 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
         )
 
     @mcp.tool(
+        name="batch_match_prices",
+        description=(
+            "รับรายการคำขอค้นหาราคาเป็นชุด (Batch) สำหรับชิ้นส่วน BIM และรายการปริมาณงาน (QTO) จาก Rule-BOQ หรือ Agent "
+            "ค้นหาด้วย Vector Matrix Search ในมิติวัสดุและมิติค่าแรงพร้อมกันในเสี้ยววินาที "
+            "ส่งคืนผลลัพธ์พร้อม material_rate, labor_rate, unit_rate, confidence_score และโครงสร้าง CostRecord"
+        ),
+    )
+    def batch_match_prices(
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """จับคู่ราคาเป็นชุด (Batch Matching) สำหรับงาน BIM ทั้งโมเดล/ทั้งชั้น.
+
+        Args:
+            items: รายการ dict เช่น [{'id': '1', 'query': 'คอนกรีตเสา C12 240 ksc', 'unit': 'm3'}]
+
+        Returns:
+            Structured dictionary ประกอบด้วยผลการจับคู่แยกรายชิ้น ค่าความมั่นใจ และ CostRecord
+        """
+        return svc.batch_match_prices(items=items)
+
+    @mcp.tool(
+        name="export_boq_cost_records",
+        description=(
+            "ส่งออกข้อมูลราคาที่อยู่ในฐานข้อมูลออกมาเป็นชุด Object ชนิด CostRecord ตามสัญญาของ Rule-BOQ "
+            "เพื่อให้ฟังก์ชัน generate_boq ของ Rule-BOQ นำไปใช้คำนวณต้นทุนต่อได้ทันที"
+        ),
+    )
+    def export_boq_cost_records(
+        standard_labels: list[str] | None = None,
+        approved_only: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """ส่งออก CostRecord สำหรับป้อนเข้า Rule-BOQ.
+
+        Args:
+            standard_labels: รายการป้ายมาตรฐานที่ต้องการกรอง เช่น ['RC_COLUMN', 'REBAR']
+            approved_only: กรองเฉพาะรายการที่ได้รับการอนุมัติแล้ว
+            limit: จำนวนรายการสูงสุดที่ต้องการส่งออก (ค่าเริ่มต้น: 100)
+
+        Returns:
+            List ของ CostRecord objects พร้อมใช้กับ Rule-BOQ
+        """
+        return svc.export_boq_cost_records(
+            standard_labels=standard_labels,
+            approved_only=approved_only,
+            limit=limit,
+        )
+
+    @mcp.tool(
         name="rebuild_price_database",
         description=(
-            "อ่านข้อมูลราคาชิ้นส่วนอาคาร (Element), วัสดุก่อสร้าง (Material) และค่าแรงงาน (Labor) จากไฟล์ Excel "
-            "รองรับทั้งรูปแบบ 3 Worksheet ('Element-based', 'Material-based', 'ค่าแรงงาน') และรูปแบบเดี่ยว 'วัสดุพื้นฐาน' "
-            "ค้นหาไฟล์ตามลำดับความสำคัญโดยอัตโนมัติ: 1. Desktop -> 2. โฟลเดอร์ data/ ของโปรเจกต์ -> 3. Downloads (หรือระบุ Full Path) "
-            "ตรวจเช็คความถูกต้องและทำ Clean Rebuild สร้างฐานข้อมูล SQLite + FAISS Vector Index ใหม่ทั้งหมดทันที"
+            "อ่านข้อมูลราคาชิ้นส่วนอาคาร (Element), วัสดุก่อสร้าง (Material) และค่าแรงงาน (Labor) จากไฟล์ Excel ในโฟลเดอร์ data/ "
+            "ตรวจจับไฟล์ .xlsx ในโฟลเดอร์ data/ อัตโนมัติแบบไดนามิก (หรือระบุชื่อไฟล์เจาะจงได้) "
+            "ทำการลบข้อมูลเดิมออกให้หมดจดก่อน แล้วสร้างฐานข้อมูล SQLite + FAISS Vector Index ใหม่ลงใน data/price_database/"
         ),
     )
     def rebuild_price_database(
         file_path: str = "price_database.xlsx",
     ) -> dict[str, Any]:
-        """สร้างฐานข้อมูลราคาใหม่ทั้งหมดจากไฟล์ Excel (ค้นหาตามลำดับ: Desktop -> data/ -> Downloads).
+        """สร้างฐานข้อมูลราคาใหม่ทั้งหมดจากไฟล์ Excel ใน data/ (ลบข้อมูลเก่าก่อนสร้างใหม่เสมอ).
 
         Args:
-            file_path: ชื่อไฟล์หรือพาธไฟล์ Excel (ค่าเริ่มต้น: 'price_database.xlsx')
+            file_path: ชื่อไฟล์หรือพาธไฟล์ Excel (ค่าเริ่มต้น: ตรวจจับไฟล์ .xlsx ใน data/ อัตโนมัติ)
 
         Returns:
             Structured dictionary สรุปผลการนำเข้าหรือข้อผิดพลาด
