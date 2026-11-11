@@ -24,44 +24,83 @@ class ExcelLoader:
         self.sheet_name = sheet_name
 
     @classmethod
-    def resolve_excel_path(cls, file_path: str | Path) -> Path:
-        """Resolve Excel path with smart auto-detection, prioritizing Desktop."""
-        raw = Path(file_path)
-
-        # 1. Direct match (absolute path or relative to current working directory)
-        if raw.exists():
-            return raw.resolve()
-
-        file_name = raw.name
+    def resolve_excel_path(cls, file_path: str | Path | None = None) -> Path:
+        """Resolve Excel path with strict search priority:
+        1. Desktop (Path.home() / Desktop)
+        2. Project data folder (PROJECT_ROOT / data)
+        3. Downloads (Path.home() / Downloads)
+        4. Explicit absolute path or project root
+        """
         from app.config import PROJECT_ROOT
 
-        # 2. Candidate search locations (Desktop prioritized for user drops)
-        desktop_paths = [
-            Path.home() / "Desktop" / file_name,
-            Path.home() / "OneDrive" / "Desktop" / file_name,
-        ]
-        other_candidates = [
-            Path.home() / "Downloads" / file_name,
-            PROJECT_ROOT / "data" / file_name,
-            PROJECT_ROOT / file_name,
-            PROJECT_ROOT / raw,
-        ]
+        # If explicit path provided and exists, honor it directly
+        if file_path and str(file_path).strip():
+            raw = Path(file_path)
+            if raw.is_absolute() and raw.exists():
+                return raw.resolve()
+            # Search strictly for the user-specified filename
+            names_to_search = [raw.name]
+        else:
+            # Default candidate filenames to search in priority order
+            names_to_search = ["price_database.xlsx", "Real_Price_Database_3Worksheets-v2.xlsx"]
 
-        candidates = desktop_paths + other_candidates
-        for cand in candidates:
+        # 1. Desktop (Highest Priority: Desktop / OneDrive Desktop)
+        desktop_dirs = [
+            Path.home() / "Desktop",
+            Path.home() / "OneDrive" / "Desktop",
+        ]
+        for d in desktop_dirs:
+            for name in names_to_search:
+                cand = d / name
+                try:
+                    if cand.exists():
+                        logger.info(f"Auto-resolved Excel file from Desktop: {cand}")
+                        return cand.resolve()
+                except (PermissionError, OSError):
+                    pass
+
+        # 2. Project data folder (Second Priority)
+        data_dir = PROJECT_ROOT / "data"
+        for name in names_to_search:
+            cand = data_dir / name
+            try:
+                if cand.exists():
+                    logger.info(f"Auto-resolved Excel file from project data/ folder: {cand}")
+                    return cand.resolve()
+            except (PermissionError, OSError):
+                pass
+
+        # 3. Downloads folder (Third Priority)
+        downloads_dir = Path.home() / "Downloads"
+        for name in names_to_search:
+            cand = downloads_dir / name
+            try:
+                if cand.exists():
+                    logger.info(f"Auto-resolved Excel file from Downloads folder: {cand}")
+                    return cand.resolve()
+            except (PermissionError, OSError):
+                pass
+
+        # 4. Project root / Current working directory
+        for name in names_to_search:
+            cand = PROJECT_ROOT / name
             if cand.exists():
-                logger.info(f"Auto-resolved Excel file '{file_name}' to: {cand}")
+                logger.info(f"Auto-resolved Excel file from project root: {cand}")
                 return cand.resolve()
+            cand_cwd = Path.cwd() / name
+            if cand_cwd.exists():
+                logger.info(f"Auto-resolved Excel file from CWD: {cand_cwd}")
+                return cand_cwd.resolve()
 
         searched_dirs = [
             str(Path.home() / "Desktop"),
-            str(Path.home() / "Downloads"),
             str(PROJECT_ROOT / "data"),
+            str(Path.home() / "Downloads"),
             str(PROJECT_ROOT),
         ]
         searched_text = "\n - " + "\n - ".join(searched_dirs)
         raise ExcelLoadError(
-            f"ไม่พบไฟล์ '{file_path}'\nระบบค้นหาในโฟลเดอร์ต่อไปนี้แล้วแต่ไม่พบ:{searched_text}"
+            f"ไม่พบไฟล์ '{file_path or file_name}'\nระบบค้นหาตามลำดับความสำคัญแล้วแต่ไม่พบ (1. Desktop -> 2. data/ -> 3. Downloads):{searched_text}"
         )
 
     @classmethod

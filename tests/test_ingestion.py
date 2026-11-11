@@ -29,6 +29,28 @@ def test_excel_loader_missing_file_raises():
         loader.load_raw_sections()
 
 
+def test_excel_loader_search_priority(monkeypatch, tmp_path: Path):
+    """Verify search priority: 1. Desktop -> 2. data/ project folder -> 3. Downloads."""
+    fake_desktop = tmp_path / "Desktop"
+    fake_downloads = tmp_path / "Downloads"
+    fake_desktop.mkdir()
+    fake_downloads.mkdir()
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+    # 1. File only in Downloads
+    dl_file = fake_downloads / "test_p_unique.xlsx"
+    dl_file.write_text("fake_content", encoding="utf-8")
+    resolved = ExcelLoader.resolve_excel_path("test_p_unique.xlsx")
+    assert resolved == dl_file.resolve()
+
+    # 2. File in Desktop as well -> Desktop must win
+    dt_file = fake_desktop / "test_p_unique.xlsx"
+    dt_file.write_text("fake_content", encoding="utf-8")
+    resolved2 = ExcelLoader.resolve_excel_path("test_p_unique.xlsx")
+    assert resolved2 == dt_file.resolve()
+
+
 def test_ingestion_service_e2e_and_idempotency(tmp_path: Path):
     """Test full ingestion into temporary SQLite database and verify idempotency."""
     test_db_path = tmp_path / "test_price.db"

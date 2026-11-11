@@ -59,14 +59,14 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
         description=(
             "อ่านข้อมูลราคาชิ้นส่วนอาคาร (Element), วัสดุก่อสร้าง (Material) และค่าแรงงาน (Labor) จากไฟล์ Excel "
             "รองรับทั้งรูปแบบ 3 Worksheet ('Element-based', 'Material-based', 'ค่าแรงงาน') และรูปแบบเดี่ยว 'วัสดุพื้นฐาน' "
-            "ค้นหาไฟล์ใน Desktop, Downloads และ data/ ให้อัตโนมัติ หรือระบุ Full Path "
+            "ค้นหาไฟล์ตามลำดับความสำคัญโดยอัตโนมัติ: 1. Desktop -> 2. โฟลเดอร์ data/ ของโปรเจกต์ -> 3. Downloads (หรือระบุ Full Path) "
             "ตรวจเช็คความถูกต้องและทำ Clean Rebuild สร้างฐานข้อมูล SQLite + FAISS Vector Index ใหม่ทั้งหมดทันที"
         ),
     )
     def rebuild_price_database(
         file_path: str = "price_database.xlsx",
     ) -> dict[str, Any]:
-        """สร้างฐานข้อมูลราคาใหม่ทั้งหมดจากไฟล์ Excel (3 Worksheet หรือ 'วัสดุพื้นฐาน').
+        """สร้างฐานข้อมูลราคาใหม่ทั้งหมดจากไฟล์ Excel (ค้นหาตามลำดับ: Desktop -> data/ -> Downloads).
 
         Args:
             file_path: ชื่อไฟล์หรือพาธไฟล์ Excel (ค่าเริ่มต้น: 'price_database.xlsx')

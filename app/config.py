@@ -120,30 +120,15 @@ class AppSettings(BaseSettings):
         return p if p.is_absolute() else PROJECT_ROOT / p
 
     def get_excel_path(self) -> Path:
-        """Resolve Excel path, prioritizing Desktop price_database.xlsx, configured path, and data/."""
-        desktop_f = Path.home() / "Desktop" / "price_database.xlsx"
+        """Resolve Excel path with strict priority: 1. Desktop, 2. data/ project folder, 3. Downloads."""
+        from app.ingestion.excel_loader import ExcelLoader
         try:
-            if desktop_f.exists():
-                return desktop_f
-        except (PermissionError, OSError):
-            pass
-
-        p = Path(self.excel_file_path)
-        if p.is_absolute() and p.exists():
-            return p
-        if (PROJECT_ROOT / p).exists():
-            return PROJECT_ROOT / p
-
-        candidates = [
-            PROJECT_ROOT / "data" / "price_database.xlsx",
-            PROJECT_ROOT / "data" / "Real_Price_Database_3Worksheets-v2.xlsx",
-            PROJECT_ROOT / "data" / "Real_Price_Database_full.xlsx",
-            PROJECT_ROOT / "data" / "Real_Price_Database.xlsx",
-        ]
-        for c in candidates:
-            if c.exists():
-                return c
-        return p if p.is_absolute() else PROJECT_ROOT / p
+            return ExcelLoader.resolve_excel_path(self.excel_file_path)
+        except Exception:
+            fallback = PROJECT_ROOT / "data" / "price_database.xlsx"
+            if fallback.exists():
+                return fallback
+            return PROJECT_ROOT / "data" / "Real_Price_Database_3Worksheets-v2.xlsx"
 
 
 settings = AppSettings()

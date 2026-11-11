@@ -196,8 +196,12 @@ class VectorDatabase:
                 # Metadata filtering
                 if record_type and record_type != "all" and meta.get("record_type") != record_type:
                     continue
-                if unit and meta.get("normalized_unit") != unit and meta.get("unit") != unit:
-                    continue
+                if unit:
+                    from app.ingestion.data_normalizer import DataNormalizer
+                    norm_q_unit = DataNormalizer.resolve_query_unit(unit)
+                    m_norm = DataNormalizer.resolve_query_unit(meta.get("normalized_unit") or meta.get("unit"))
+                    if norm_q_unit != m_norm and meta.get("normalized_unit") != unit and meta.get("unit") != unit:
+                        continue
 
                 sim_score = max(0.0, min(1.0, float(score)))
                 candidates.append({

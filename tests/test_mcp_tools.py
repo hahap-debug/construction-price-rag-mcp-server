@@ -109,7 +109,8 @@ def test_price_service_get_price():
     rec = res["record"]
     assert "DB12" in rec["item_name"]
     assert float(rec["unit_price"]) == 25.0
-    assert rec["unit"] == "กก."
+    assert rec["unit"] in ("กก.", "kg")
+    assert rec["normalized_unit"] == "กก."
     assert rec["vat_included"] is False
     assert rec["transportation_included"] is False
 
