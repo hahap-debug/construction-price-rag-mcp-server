@@ -24,8 +24,8 @@ class DataValidator:
         if not data.get("price_id"):
             errors.append("price_id is required and cannot be empty")
 
-        if data.get("record_type") not in ("material", "labor"):
-            errors.append(f"Invalid record_type: '{data.get('record_type')}'. Must be 'material' or 'labor'")
+        if data.get("record_type") not in ("element", "material", "labor"):
+            errors.append(f"Invalid record_type: '{data.get('record_type')}'. Must be 'element', 'material', or 'labor'")
 
         if not data.get("item_name") or not str(data.get("item_name")).strip():
             errors.append("item_name is required and cannot be blank")

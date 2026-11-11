@@ -82,11 +82,45 @@ class ExcelLoader:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
+    @staticmethod
+    def _extract_sheet_table(ws: Any, section_name: str) -> list[dict[str, Any]]:
+        """Extract rows from a structured worksheet (header row contains 'รายการ' and 'หน่วย')."""
+        start_row = 5
+        for r in range(1, min(10, ws.max_row + 1)):
+            c1 = str(ws.cell(r, 1).value or "").strip()
+            c2 = str(ws.cell(r, 2).value or "").strip()
+            if ("รายการ" in c1 or "Item" in c1) and ("หน่วย" in c2 or "Unit" in c2):
+                start_row = r + 1
+                break
+
+        rows: list[dict[str, Any]] = []
+        for r in range(start_row, ws.max_row + 1):
+            row_vals = [ws.cell(r, c).value for c in range(1, ws.max_column + 1)]
+            first_val = str(row_vals[0] or "").strip() if row_vals[0] is not None else ""
+            if not first_val or first_val.startswith("หมายเหตุ:"):
+                continue
+
+            price_val = row_vals[2] if len(row_vals) > 2 else None
+            if price_val is not None and str(price_val).strip() != "":
+                rows.append({
+                    "row_index": r,
+                    "raw_item_name": row_vals[0],
+                    "raw_unit": row_vals[1] if len(row_vals) > 1 else "",
+                    "raw_price": price_val,
+                    "raw_note": row_vals[3] if len(row_vals) > 3 else "",
+                    "raw_range": row_vals[4] if len(row_vals) > 4 else None,
+                    "section": section_name,
+                })
+        return rows
+
     def load_raw_sections(self) -> dict[str, Any]:
-        """Load worksheet 'วัสดุพื้นฐาน' and separate material and labor rows.
+        """Load worksheet(s) and separate element, material, and labor rows.
+
+        Supports both 3-worksheet format ('Element-based', 'Material-based', 'ค่าแรงงาน')
+        and legacy single-worksheet format ('วัสดุพื้นฐาน').
 
         Returns:
-            Dictionary containing metadata, material rows, and labor rows.
+            Dictionary containing metadata, element rows, material rows, and labor rows.
         """
         # Resolve and validate path
         self.file_path = self.resolve_excel_path(self.file_path)
@@ -97,78 +131,106 @@ class ExcelLoader:
         except Exception as e:
             raise ExcelLoadError(f"ไม่สามารถเปิดไฟล์ Excel '{self.file_path.name}' ได้ (ไฟล์อาจเสียหายหรือถูกล็อค): {e}") from e
 
-        # Strict check for target worksheet (default 'วัสดุพื้นฐาน')
-        target_sheet = self.sheet_name or self.TARGET_WORKSHEET
-        if target_sheet not in wb.sheetnames:
-            available = ", ".join(f"'{s}'" for s in wb.sheetnames)
-            raise ExcelLoadError(
-                f"ไฟล์ Excel '{self.file_path.name}' ไม่มี Worksheet ชื่อ '{target_sheet}' "
-                f"(Worksheet ที่พบในไฟล์: {available})"
-            )
-
-        ws = wb[target_sheet]
-        worksheet_name = target_sheet
-
         file_hash = self.calculate_file_hash()
-        logger.info(
-            f"Loaded worksheet '{worksheet_name}' from {self.file_path.name} "
-            f"(rows: {ws.max_row}, cols: {ws.max_column}, hash: {file_hash[:8]}...)"
-        )
 
-        # Extract title and subtitle notes
-        title_text = str(ws.cell(1, 1).value or "").strip()
-        header_note = str(ws.cell(2, 1).value or "").strip()
+        # Check if 3-worksheet mode applies
+        multi_sheets = [s for s in wb.sheetnames if s in ("Element-based", "Material-based", "ค่าแรงงาน")]
+        is_multi = len(multi_sheets) > 0 and self.sheet_name is None
 
+        element_rows: list[dict[str, Any]] = []
         material_rows: list[dict[str, Any]] = []
         labor_rows: list[dict[str, Any]] = []
+        total_rows_read = 0
 
-        current_section: str | None = None
+        if is_multi:
+            worksheet_names = []
+            if "Element-based" in wb.sheetnames:
+                ws_ele = wb["Element-based"]
+                element_rows = self._extract_sheet_table(ws_ele, "element")
+                total_rows_read += ws_ele.max_row
+                worksheet_names.append("Element-based")
+            if "Material-based" in wb.sheetnames:
+                ws_mat = wb["Material-based"]
+                material_rows = self._extract_sheet_table(ws_mat, "material")
+                total_rows_read += ws_mat.max_row
+                worksheet_names.append("Material-based")
+            if "ค่าแรงงาน" in wb.sheetnames:
+                ws_lab = wb["ค่าแรงงาน"]
+                labor_rows = self._extract_sheet_table(ws_lab, "labor")
+                total_rows_read += ws_lab.max_row
+                worksheet_names.append("ค่าแรงงาน")
 
-        for r in range(1, ws.max_row + 1):
-            row_vals = [ws.cell(r, c).value for c in range(1, ws.max_column + 1)]
-            first_val = str(row_vals[0] or "").strip() if row_vals[0] is not None else ""
+            worksheet_name = ", ".join(worksheet_names)
+            first_ws = wb[worksheet_names[0]]
+            title_text = str(first_ws.cell(1, 1).value or "").strip()
+            header_note = str(first_ws.cell(2, 1).value or "").strip()
 
-            # Check section transitions
-            if "รายการวัสดุ" in first_val:
-                current_section = "material"
-                continue
-            elif "ค่าแรงงานพื้นฐาน" in first_val or "รายการค่าแรง" in first_val:
-                current_section = "labor"
-                continue
-            elif first_val.startswith("หมายเหตุ:"):
-                # Footer note reached
-                current_section = None
-                continue
+        else:
+            # Single worksheet mode (either specified sheet or TARGET_WORKSHEET)
+            target_sheet = self.sheet_name or self.TARGET_WORKSHEET
+            if target_sheet not in wb.sheetnames:
+                available = ", ".join(f"'{s}'" for s in wb.sheetnames)
+                raise ExcelLoadError(
+                    f"ไฟล์ Excel '{self.file_path.name}' ไม่มี Worksheet ชื่อ '{target_sheet}' "
+                    f"(Worksheet ที่พบในไฟล์: {available})"
+                )
 
-            # Check if this row is a valid data row (must have item name and price)
-            if current_section == "material":
-                # Must have col 1 (item name) and col 3 (price)
-                if row_vals[0] and row_vals[2] is not None:
-                    material_rows.append({
-                        "row_index": r,
-                        "raw_item_name": row_vals[0],
-                        "raw_unit": row_vals[1],
-                        "raw_price": row_vals[2],
-                        "raw_note": row_vals[3],
-                        "raw_range": row_vals[4] if len(row_vals) > 4 else None,
-                        "section": "material",
-                    })
+            ws = wb[target_sheet]
+            worksheet_name = target_sheet
+            total_rows_read = ws.max_row
+            title_text = str(ws.cell(1, 1).value or "").strip()
+            header_note = str(ws.cell(2, 1).value or "").strip()
 
-            elif current_section == "labor":
-                if row_vals[0] and row_vals[2] is not None:
-                    labor_rows.append({
-                        "row_index": r,
-                        "raw_item_name": row_vals[0],
-                        "raw_unit": row_vals[1],
-                        "raw_price": row_vals[2],
-                        "raw_note": row_vals[3],
-                        "raw_range": row_vals[4] if len(row_vals) > 4 else None,
-                        "section": "labor",
-                    })
+            if target_sheet == "Element-based":
+                element_rows = self._extract_sheet_table(ws, "element")
+            elif target_sheet == "Material-based":
+                material_rows = self._extract_sheet_table(ws, "material")
+            elif target_sheet == "ค่าแรงงาน":
+                labor_rows = self._extract_sheet_table(ws, "labor")
+            else:
+                # Legacy single sheet parsing with section delimiters
+                current_section: str | None = None
+                for r in range(1, ws.max_row + 1):
+                    row_vals = [ws.cell(r, c).value for c in range(1, ws.max_column + 1)]
+                    first_val = str(row_vals[0] or "").strip() if row_vals[0] is not None else ""
+
+                    if "รายการวัสดุ" in first_val:
+                        current_section = "material"
+                        continue
+                    elif "ค่าแรงงานพื้นฐาน" in first_val or "รายการค่าแรง" in first_val:
+                        current_section = "labor"
+                        continue
+                    elif first_val.startswith("หมายเหตุ:"):
+                        current_section = None
+                        continue
+
+                    if current_section == "material":
+                        if row_vals[0] and row_vals[2] is not None:
+                            material_rows.append({
+                                "row_index": r,
+                                "raw_item_name": row_vals[0],
+                                "raw_unit": row_vals[1],
+                                "raw_price": row_vals[2],
+                                "raw_note": row_vals[3],
+                                "raw_range": row_vals[4] if len(row_vals) > 4 else None,
+                                "section": "material",
+                            })
+                    elif current_section == "labor":
+                        if row_vals[0] and row_vals[2] is not None:
+                            labor_rows.append({
+                                "row_index": r,
+                                "raw_item_name": row_vals[0],
+                                "raw_unit": row_vals[1],
+                                "raw_price": row_vals[2],
+                                "raw_note": row_vals[3],
+                                "raw_range": row_vals[4] if len(row_vals) > 4 else None,
+                                "section": "labor",
+                            })
 
         logger.info(
-            f"Extracted {len(material_rows)} material rows and {len(labor_rows)} labor rows "
-            f"from '{worksheet_name}'"
+            f"Extracted {len(element_rows)} element rows, {len(material_rows)} material rows, "
+            f"and {len(labor_rows)} labor rows from '{worksheet_name}' "
+            f"(hash: {file_hash[:8]}...)"
         )
 
         return {
@@ -178,7 +240,8 @@ class ExcelLoader:
             "source_file_hash": file_hash,
             "title_text": title_text,
             "header_note": header_note,
+            "elements": element_rows,
             "materials": material_rows,
             "labor": labor_rows,
-            "total_rows_read": ws.max_row,
+            "total_rows_read": total_rows_read,
         }

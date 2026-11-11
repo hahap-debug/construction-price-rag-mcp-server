@@ -15,7 +15,7 @@ def test_fuzzy_search_typo_handling():
 
     assert len(results) > 0
     top = results[0]
-    assert top["price_id"] == "MAT-008"
+    assert top["price_id"] == "MAT-014"
     assert "DB12" in top["record"].item_name
     assert top["score"] >= 0.70
 
@@ -29,8 +29,8 @@ def test_fuzzy_spec_conflict_guard():
     query = "เหล็กเส้นข้ออ้อย SD40 DB12"
     results = retriever.search(query=query, records=records)
 
-    db12_results = [r for r in results if r["price_id"] == "MAT-008"]
-    db16_results = [r for r in results if r["price_id"] == "MAT-009"]
+    db12_results = [r for r in results if r["price_id"] == "MAT-014"]
+    db16_results = [r for r in results if r["price_id"] == "MAT-015"]
 
     assert len(db12_results) == 1
     # DB12 score should be significantly higher than conflicting DB16
@@ -49,5 +49,5 @@ def test_fuzzy_usage_keyword_boost():
     results = retriever.search(query=query, records=records)
 
     assert len(results) > 0
-    assert results[0]["price_id"] == "MAT-011"
-    assert "ปลอกเสา" in results[0]["record"].item_name
+    assert results[0]["price_id"] == "MAT-012"
+    assert "RB6" in results[0]["record"].item_name

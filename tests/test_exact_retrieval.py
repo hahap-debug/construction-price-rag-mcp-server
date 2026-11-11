@@ -10,11 +10,11 @@ def test_exact_search_identical_match():
     records = db.get_all_prices("material")
     retriever = ExactRetriever()
 
-    query = "เหล็กเส้นข้ออ้อย SD40 DB12 (งานเสา-คาน)"
+    query = "เหล็กเส้นข้ออ้อย SD40 ขนาด DB12 มม. (ยาว 10 ม.) / Deformed Bar SD40 DB12mm (10m)"
     results = retriever.search(query=query, records=records)
 
     assert len(results) >= 1
-    assert results[0]["price_id"] == "MAT-008"
+    assert results[0]["price_id"] == "MAT-014"
     assert results[0]["score"] == 1.0
     assert results[0]["retrieval_method"] == "exact"
 
@@ -25,11 +25,11 @@ def test_exact_search_with_question_words():
     records = db.get_all_prices("material")
     retriever = ExactRetriever()
 
-    query = "ราคา เหล็กเส้นข้ออ้อย SD40 DB12 (งานเสา-คาน) เท่าไร"
+    query = "ราคา เหล็กเส้นข้ออ้อย SD40 ขนาด DB12 มม. (ยาว 10 ม.) / Deformed Bar SD40 DB12mm (10m) เท่าไร"
     results = retriever.search(query=query, records=records)
 
     assert len(results) >= 1
-    assert results[0]["price_id"] == "MAT-008"
+    assert results[0]["price_id"] == "MAT-014"
     assert results[0]["score"] >= 0.98
 
 
@@ -39,8 +39,8 @@ def test_exact_search_core_spec():
     records = db.get_all_prices("material")
     retriever = ExactRetriever()
 
-    query = "เหล็กเส้นข้ออ้อย SD40 DB12"
+    query = "เหล็กเส้นข้ออ้อย SD40 ขนาด DB12 มม."
     results = retriever.search(query=query, records=records)
 
     assert len(results) >= 1
-    assert results[0]["price_id"] == "MAT-008"
+    assert results[0]["price_id"] == "MAT-014"

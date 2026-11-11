@@ -19,9 +19,9 @@ class PriceRecord(BaseModel):
         ...,
         description="Deterministic unique identifier (e.g., MAT-001, LAB-001)",
     )
-    record_type: Literal["material", "labor"] = Field(
+    record_type: Literal["element", "material", "labor"] = Field(
         ...,
-        description="Classification: material or labor",
+        description="Classification: element (BIM 3D element/fixture), material (bulk/raw materials), or labor (workmanship/tests)",
     )
     item_name: str = Field(
         ...,
@@ -30,6 +30,14 @@ class PriceRecord(BaseModel):
     normalized_item_name: str = Field(
         ...,
         description="Standardized name for exact and fuzzy matching",
+    )
+    bim_family: str | None = Field(
+        default=None,
+        description="BIM Family name for element records (e.g. ST_202A_RCColumn_Rectangular)",
+    )
+    bim_type: str | None = Field(
+        default=None,
+        description="BIM Type name for element records (e.g. C12_350x1950mm)",
     )
     category: str | None = Field(
         default=None,
@@ -105,12 +113,14 @@ class SearchResultItem(BaseModel):
     """Result item returned by retrieval engine with ranking metadata."""
 
     price_id: str
-    record_type: Literal["material", "labor"]
+    record_type: Literal["element", "material", "labor"]
     item_name: str
     unit: str
     unit_price: Decimal
     market_min: Decimal | None = None
     market_max: Decimal | None = None
+    bim_family: str | None = None
+    bim_type: str | None = None
     currency: str = "THB"
     price_date: str | None = None
     source_name: str | None = None
@@ -154,8 +164,9 @@ class DatabaseInfo(BaseModel):
     source_excel_file: str
     source_worksheet: str
     source_file_hash: str
-    total_material_records: int
-    total_labor_records: int
+    total_element_records: int = 0
+    total_material_records: int = 0
+    total_labor_records: int = 0
     total_records: int
     latest_price_date: str | None
     import_timestamp: str
@@ -165,8 +176,9 @@ class ImportReport(BaseModel):
     """Report generated after Excel ingestion pipeline executes."""
 
     total_rows_read: int
-    materials_imported: int
-    labor_imported: int
+    elements_imported: int = 0
+    materials_imported: int = 0
+    labor_imported: int = 0
     records_created: int
     records_updated: int
     rows_skipped: int

@@ -79,10 +79,33 @@ class ExactRetriever:
                 })
                 continue
 
-            # 3. Clean query matches core item prefix before parentheses
-            # e.g., "เหล็กเส้นข้ออ้อย SD40 DB12" matches "เหล็กเส้นข้ออ้อย SD40 DB12 (งานเสา-คาน)"
+            # 3. Match Thai part or English part before/after slash
+            if "/" in item_lower:
+                slash_parts = [p.strip() for p in item_lower.split("/")]
+                if clean_q in slash_parts or raw_q in slash_parts:
+                    candidates.append({
+                        "price_id": r.price_id,
+                        "record": r,
+                        "score": 0.99,
+                        "retrieval_method": "exact",
+                        "match_type": "bilingual_exact",
+                    })
+                    continue
+
+            # 4. Clean query matches core item prefix before parentheses
             base_name = re.sub(r"\(.*?\)", "", item_lower).strip()
-            if clean_q and clean_q == base_name:
+            if "/" in base_name:
+                base_name_thai = re.sub(r"\(.*?\)", "", item_lower.split("/")[0]).strip()
+                if clean_q and (clean_q == base_name or clean_q == base_name_thai):
+                    candidates.append({
+                        "price_id": r.price_id,
+                        "record": r,
+                        "score": 0.98,
+                        "retrieval_method": "exact",
+                        "match_type": "core_spec_exact",
+                    })
+                    continue
+            elif clean_q and clean_q == base_name:
                 candidates.append({
                     "price_id": r.price_id,
                     "record": r,

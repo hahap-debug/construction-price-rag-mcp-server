@@ -55,6 +55,8 @@ class SQLiteDatabase:
                     record_type TEXT NOT NULL,
                     item_name TEXT NOT NULL,
                     normalized_item_name TEXT NOT NULL,
+                    bim_family TEXT,
+                    bim_type TEXT,
                     category TEXT,
                     description TEXT,
                     unit TEXT NOT NULL,
@@ -75,12 +77,22 @@ class SQLiteDatabase:
                 )
             """)
 
+            # Ensure columns exist if table was previously created without them
+            cursor.execute("PRAGMA table_info(prices)")
+            existing_cols = [col["name"] for col in cursor.fetchall()]
+            if "bim_family" not in existing_cols:
+                cursor.execute("ALTER TABLE prices ADD COLUMN bim_family TEXT")
+            if "bim_type" not in existing_cols:
+                cursor.execute("ALTER TABLE prices ADD COLUMN bim_type TEXT")
+
             # Indexes for efficient filtering and exact lookup
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_record_type ON prices(record_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_unit ON prices(unit)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_normalized_unit ON prices(normalized_unit)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_date ON prices(price_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_item_name ON prices(normalized_item_name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_bim_family ON prices(bim_family)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_bim_type ON prices(bim_type)")
 
             # Ingestion metadata table
             cursor.execute("""
@@ -108,16 +120,18 @@ class SQLiteDatabase:
             cursor.execute("""
                 INSERT INTO prices (
                     price_id, record_type, item_name, normalized_item_name,
-                    category, description, unit, normalized_unit,
-                    unit_price, market_min, market_max, currency,
-                    price_date, source_name, source_url, source_note,
+                    bim_family, bim_type, category, description,
+                    unit, normalized_unit, unit_price, market_min, market_max,
+                    currency, price_date, source_name, source_url, source_note,
                     vat_included, transportation_included,
                     original_excel_row, raw_source_data, imported_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(price_id) DO UPDATE SET
                     record_type = excluded.record_type,
                     item_name = excluded.item_name,
                     normalized_item_name = excluded.normalized_item_name,
+                    bim_family = excluded.bim_family,
+                    bim_type = excluded.bim_type,
                     category = excluded.category,
                     description = excluded.description,
                     unit = excluded.unit,
@@ -140,6 +154,8 @@ class SQLiteDatabase:
                 record.record_type,
                 record.item_name,
                 record.normalized_item_name,
+                getattr(record, "bim_family", None),
+                getattr(record, "bim_type", None),
                 record.category,
                 record.description,
                 record.unit,
@@ -187,6 +203,8 @@ class SQLiteDatabase:
             record_type=row["record_type"],
             item_name=row["item_name"],
             normalized_item_name=row["normalized_item_name"],
+            bim_family=row["bim_family"] if "bim_family" in row.keys() else None,
+            bim_type=row["bim_type"] if "bim_type" in row.keys() else None,
             category=row["category"],
             description=row["description"],
             unit=row["unit"],
@@ -294,6 +312,9 @@ class SQLiteDatabase:
         """Get summary statistics of the database."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS cnt FROM prices WHERE record_type = 'element'")
+            ele_count = cursor.fetchone()["cnt"]
+
             cursor.execute("SELECT COUNT(*) AS cnt FROM prices WHERE record_type = 'material'")
             mat_count = cursor.fetchone()["cnt"]
 
@@ -304,8 +325,9 @@ class SQLiteDatabase:
             max_date = cursor.fetchone()["max_date"]
 
             return {
+                "total_element_records": ele_count,
                 "total_material_records": mat_count,
                 "total_labor_records": lab_count,
-                "total_records": mat_count + lab_count,
+                "total_records": ele_count + mat_count + lab_count,
                 "latest_price_date": max_date,
             }

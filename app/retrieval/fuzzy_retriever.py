@@ -128,6 +128,13 @@ class FuzzyRetriever:
                         raw_score = min(1.0, raw_score + 0.20)
                     break
 
+            # Thai construction domain synonym: เหล็กปลอก / ปลอกเสา / ปลอกคาน -> RB6 / RB9
+            if any(term in q_raw for term in ("ปลอกเสา", "ปลอกคาน", "เหล็กปลอก")):
+                if "RB6" in item_text:
+                    raw_score = max(raw_score, 0.88)
+                elif "RB9" in item_text:
+                    raw_score = max(raw_score, 0.80)
+
             # Check specification conflict and requirement
             item_specs = self.extract_specs(item_text)
             if q_specs:

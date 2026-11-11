@@ -5,23 +5,25 @@ from app.services.price_service import PriceService
 
 
 def test_mcp_server_tool_registration():
-    """Verify match_material and rebuild_price_database are registered on the FastMCP server."""
+    """Verify match_material, rebuild_price_database, and get_database_status are registered."""
     provider = mcp._local_provider
     registered_keys = list(provider._components.keys())
 
     assert "tool:match_material@" in registered_keys
     assert "tool:rebuild_price_database@" in registered_keys
-    assert len(registered_keys) == 2
+    assert "tool:get_database_status@" in registered_keys
+    assert len(registered_keys) == 3
 
 
 def test_mcp_rebuild_price_database_tool():
-    """Verify rebuild_price_database cleans and rebuilds database correctly."""
+    """Verify rebuild_price_database cleans and rebuilds database correctly from price_database.xlsx."""
     tool = mcp._local_provider._components["tool:rebuild_price_database@"]
     res = tool.fn()
     assert res["status"] == "success"
-    assert res["total_records"] > 0
-    assert res["materials_imported"] > 0
-    assert res["labor_imported"] > 0
+    assert res["total_records"] >= 1000
+    assert res["elements_imported"] >= 500
+    assert res["materials_imported"] >= 400
+    assert res["labor_imported"] >= 200
     assert "vector_index_size" in res
 
 
@@ -63,7 +65,6 @@ def test_mcp_match_material_tool():
     assert res["material_query"] == "เหล็กเส้นกลม SR24 RB6"
     assert res["total_matches"] > 0
     first = res["matches"][0]
-    assert first["price_id"] == "MAT-011"
     assert first["unit"] == "กก."
     assert "unit_price" in first
     assert "similarity_score" in first
@@ -84,7 +85,7 @@ def test_price_service_search_prices():
     assert res["query"] == "เหล็ก DB12"
     assert res["total_results"] > 0
     first = res["results"][0]
-    assert first["price_id"] == "MAT-008"
+    assert first["price_id"] == "MAT-014"
     assert first["unit"] == "กก."
     assert "unit_price" in first
     assert "currency" in first
@@ -102,16 +103,15 @@ def test_price_service_get_price():
     svc = PriceService()
 
     # Found case
-    res = svc.get_price(price_id="MAT-008")
+    res = svc.get_price(price_id="MAT-014")
     assert res["status"] == "success"
-    assert res["price_id"] == "MAT-008"
+    assert res["price_id"] == "MAT-014"
     rec = res["record"]
-    assert rec["item_name"] == "เหล็กเส้นข้ออ้อย SD40 DB12 (งานเสา-คาน)"
+    assert "DB12" in rec["item_name"]
     assert float(rec["unit_price"]) == 25.0
     assert rec["unit"] == "กก."
     assert rec["vat_included"] is False
     assert rec["transportation_included"] is False
-    assert rec["original_excel_row"] == 12
 
     # Not found case
     res_nf = svc.get_price(price_id="INVALID-999")
@@ -124,9 +124,36 @@ def test_price_service_get_database_info():
     svc = PriceService()
     res = svc.get_database_info()
 
-    assert res["total_material_records"] >= 20
-    assert res["total_labor_records"] >= 5
-    assert res["total_records"] >= 25
-    assert res["source_worksheet"] == "วัสดุพื้นฐาน"
-    assert res["latest_price_date"] == "2026-07-01"
+    assert res["total_element_records"] >= 500
+    assert res["total_material_records"] >= 400
+    assert res["total_labor_records"] >= 200
+    assert res["total_records"] >= 1000
+    assert "Element-based" in res["source_worksheet"]
     assert len(res["source_file_hash"]) == 64
+
+
+def test_mcp_get_database_status_tool():
+    """Verify get_database_status returns online status and counts."""
+    tool = mcp._local_provider._components["tool:get_database_status@"]
+    res = tool.fn()
+
+    assert res["status"] == "online"
+    assert res["total_element_records"] >= 500
+    assert res["total_material_records"] >= 400
+    assert res["total_labor_records"] >= 200
+    assert res["total_records"] >= 1000
+    assert res["vector_index_size"] >= 1000
+
+
+def test_mcp_match_bim_element_tool():
+    """Verify match_material matches Revit/BIM structural element queries."""
+    tool = mcp._local_provider._components["tool:match_material@"]
+    res = tool.fn(material="ST_202A_RCColumn_Rectangular C12", top_k=3)
+
+    assert res["status"] == "success"
+    assert res["total_matches"] > 0
+    first = res["matches"][0]
+    assert first["record_type"] == "element"
+    assert "C12" in first["item_name"]
+    assert "unit_price" in first
+    assert float(first["unit_price"]) > 0

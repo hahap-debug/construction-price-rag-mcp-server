@@ -75,10 +75,68 @@ class IngestionService:
         issues: list[str] = []
 
         total_rows_read = sections["total_rows_read"]
-        materials_raw = sections["materials"]
-        labor_raw = sections["labor"]
+        elements_raw = sections.get("elements", [])
+        materials_raw = sections.get("materials", [])
+        labor_raw = sections.get("labor", [])
 
-        # 1. Process Material Items
+        # 1. Process Element Items (BIM Elements & Fixtures)
+        for idx, item_data in enumerate(elements_raw, start=1):
+            row_idx = item_data["row_index"]
+            try:
+                price_id = f"ELE-{idx:03d}"
+                raw_item_name = item_data["raw_item_name"]
+                normalized_name = DataNormalizer.normalize_text(raw_item_name)
+                raw_unit = item_data["raw_unit"]
+                normalized_unit = DataNormalizer.normalize_unit(raw_unit)
+                unit_price = DataNormalizer.parse_price(item_data["raw_price"])
+                market_min, market_max = DataNormalizer.parse_market_range(item_data["raw_range"])
+                raw_note = item_data["raw_note"]
+                source_name, source_url = DataNormalizer.extract_sources_and_urls(raw_note)
+                item_date = DataNormalizer.parse_price_date(raw_note, default_date=default_date)
+                bim_meta = DataNormalizer.extract_bim_metadata(raw_item_name)
+
+                record_dict = {
+                    "price_id": price_id,
+                    "record_type": "element",
+                    "item_name": raw_item_name.strip(),
+                    "normalized_item_name": normalized_name,
+                    "bim_family": bim_meta["bim_family"],
+                    "bim_type": bim_meta["bim_type"],
+                    "category": bim_meta["bim_category"],
+                    "description": None,
+                    "unit": raw_unit.strip() if raw_unit else "",
+                    "normalized_unit": normalized_unit,
+                    "unit_price": unit_price,
+                    "market_min": market_min,
+                    "market_max": market_max,
+                    "currency": "THB",
+                    "price_date": item_date,
+                    "source_name": source_name,
+                    "source_url": source_url,
+                    "source_note": raw_note.strip() if raw_note else None,
+                    "vat_included": vat_included,
+                    "transportation_included": transportation_included,
+                    "original_excel_row": row_idx,
+                    "raw_source_data": {
+                        "row": row_idx,
+                        "raw_item": raw_item_name,
+                        "raw_unit": raw_unit,
+                        "raw_price": item_data["raw_price"],
+                        "raw_note": raw_note,
+                        "raw_range": item_data["raw_range"],
+                    },
+                    "imported_at": datetime.now(timezone.utc),
+                }
+
+                record = DataValidator.validate_and_create_model(record_dict)
+                validated_records.append(record)
+
+            except Exception as e:
+                msg = f"Row {row_idx} (Element): {e}"
+                logger.error(msg)
+                issues.append(msg)
+
+        # 2. Process Material Items
         for idx, item_data in enumerate(materials_raw, start=1):
             row_idx = item_data["row_index"]
             try:
@@ -132,7 +190,7 @@ class IngestionService:
                 logger.error(msg)
                 issues.append(msg)
 
-        # 2. Process Labor Items
+        # 3. Process Labor Items
         for idx, item_data in enumerate(labor_raw, start=1):
             row_idx = item_data["row_index"]
             try:
@@ -186,7 +244,7 @@ class IngestionService:
                 logger.error(msg)
                 issues.append(msg)
 
-        # 3. Save to SQLite (Source of Truth)
+        # 4. Save to SQLite (Source of Truth)
         if clean_rebuild:
             self.sqlite_db.clear_all_records()
             if self.vector_db is not None:
@@ -194,6 +252,7 @@ class IngestionService:
 
         records_created = 0
         records_updated = 0
+        ele_count = 0
         mat_count = 0
         lab_count = 0
 
@@ -204,23 +263,26 @@ class IngestionService:
             else:
                 records_updated += 1
 
-            if r.record_type == "material":
+            if r.record_type == "element":
+                ele_count += 1
+            elif r.record_type == "material":
                 mat_count += 1
             else:
                 lab_count += 1
 
-        # 4. Save metadata to SQLite
+        # 5. Save metadata to SQLite
         self.sqlite_db.set_metadata("source_excel_file", self.excel_path.name)
         self.sqlite_db.set_metadata("source_worksheet", worksheet_name)
         self.sqlite_db.set_metadata("source_file_hash", source_file_hash)
         self.sqlite_db.set_metadata("imported_at", datetime.now(timezone.utc).isoformat())
+        self.sqlite_db.set_metadata("total_element_records", str(ele_count))
         self.sqlite_db.set_metadata("total_material_records", str(mat_count))
         self.sqlite_db.set_metadata("total_labor_records", str(lab_count))
         self.sqlite_db.set_metadata("total_records", str(len(validated_records)))
         if default_date:
             self.sqlite_db.set_metadata("latest_price_date", default_date.isoformat())
 
-        # 5. Populate Vector Database if enabled
+        # 6. Populate Vector Database if enabled
         if self.vector_db is not None:
             try:
                 self.vector_db.upsert_records(validated_records)
@@ -234,6 +296,7 @@ class IngestionService:
 
         report = ImportReport(
             total_rows_read=total_rows_read,
+            elements_imported=ele_count,
             materials_imported=mat_count,
             labor_imported=lab_count,
             records_created=records_created,
@@ -245,7 +308,7 @@ class IngestionService:
         )
 
         logger.info(
-            f"Ingestion completed: {mat_count} materials, {lab_count} labor, "
+            f"Ingestion completed: {ele_count} elements, {mat_count} materials, {lab_count} labor, "
             f"{records_created} created, {records_updated} updated, status={status}"
         )
         return report

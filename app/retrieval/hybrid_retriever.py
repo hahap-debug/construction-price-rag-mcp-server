@@ -41,7 +41,7 @@ class HybridRetriever:
     def retrieve(
         self,
         query: str,
-        record_type: Literal["material", "labor", "all"] = "material",
+        record_type: Literal["element", "material", "labor", "all"] = "all",
         unit: str | None = None,
         as_of: date | None = None,
         max_results: int = 5,

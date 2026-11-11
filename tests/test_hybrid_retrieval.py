@@ -15,20 +15,20 @@ def test_hybrid_retriever_all_seven_core_queries():
     # 1. เหล็ก DB12 ราคาเท่าไร
     r1 = retriever.retrieve(query="เหล็ก DB12 ราคาเท่าไร", record_type="material")
     assert r1.status == "success"
-    assert r1.results[0].price_id == "MAT-008"
+    assert r1.results[0].price_id == "MAT-014"
     assert "DB12" in r1.results[0].item_name
 
     # 2. ราคาเหล็กข้ออ้อย
     r2 = retriever.retrieve(query="ราคาเหล็กข้ออ้อย", record_type="material")
     assert r2.status == "success"
     top_pids = [item.price_id for item in r2.results[:3]]
-    assert "MAT-008" in top_pids or "MAT-009" in top_pids
+    assert "MAT-014" in top_pids or "MAT-015" in top_pids
 
     # 3. ราคาเหล็กทำปลอกเสา
     r3 = retriever.retrieve(query="ราคาเหล็กทำปลอกเสา", record_type="material")
     assert r3.status == "success"
-    assert r3.results[0].price_id == "MAT-011"
-    assert "ปลอกเสา" in r3.results[0].item_name
+    assert r3.results[0].price_id == "MAT-012"
+    assert "RB6" in r3.results[0].item_name
 
     # 4. ปูนซีเมนต์ 1 ถุงราคาเท่าไร
     r4 = retriever.retrieve(query="ปูนซีเมนต์ 1 ถุงราคาเท่าไร", record_type="material")

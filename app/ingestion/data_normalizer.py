@@ -33,8 +33,21 @@ class DataNormalizer:
         "ตร.ม.": "ตร.ม.",
         "ลบ.ม. (คิว)": "ลบ.ม.",
         "ลบ.ม.": "ลบ.ม.",
+        "m³": "ลบ.ม.",
         "กก.": "กก.",
         "ก้อน": "ก้อน",
+        "ต้น": "ต้น",
+        "ชุด": "ชุด",
+        "บาน": "บาน",
+        "เครื่อง": "เครื่อง",
+        "เมตร": "ม.",
+        "ม.": "ม.",
+        "m": "ม.",
+        "จุด": "จุด",
+        "ตัน": "ตัน",
+        "กล่อง": "กล่อง",
+        "ท่อน": "ท่อน",
+        "เที่ยว": "เที่ยว",
     }
 
     # Query unit alias mapping (for search filtering)
@@ -56,11 +69,27 @@ class DataNormalizer:
         "ลูกบาศก์เมตร": "ลบ.ม.",
         "คิว": "ลบ.ม.",
         "m3": "ลบ.ม.",
+        "m³": "ลบ.ม.",
         "cum": "ลบ.ม.",
         "ถุง": "ถุง",
         "bag": "ถุง",
         "ก้อน": "ก้อน",
         "block": "ก้อน",
+        "ต้น": "ต้น",
+        "ชุด": "ชุด",
+        "บาน": "บาน",
+        "เครื่อง": "เครื่อง",
+        "เมตร": "ม.",
+        "ม": "ม.",
+        "ม.": "ม.",
+        "m": "ม.",
+        "meter": "ม.",
+        "จุด": "จุด",
+        "ตัน": "ตัน",
+        "ton": "ตัน",
+        "กล่อง": "กล่อง",
+        "ท่อน": "ท่อน",
+        "เที่ยว": "เที่ยว",
     }
 
     @classmethod
@@ -196,3 +225,36 @@ class DataNormalizer:
             found_source = domains[0]
 
         return found_source, url
+
+    @classmethod
+    def extract_bim_metadata(cls, item_name: str | None) -> dict[str, str | None]:
+        """Extract BIM Family, Type, and Category from structured element names.
+
+        Example:
+          'คอนกรีตเสา (RC Columns) : ST_202A_RCColumn_Rectangular - C12_350x1950mm / Structural Element [Structural Columns]'
+          -> category: 'Structural Columns'
+          -> bim_family: 'ST_202A_RCColumn_Rectangular'
+          -> bim_type: 'C12_350x1950mm'
+        """
+        result: dict[str, str | None] = {
+            "bim_family": None,
+            "bim_type": None,
+            "bim_category": None,
+        }
+        if not item_name:
+            return result
+
+        name_str = str(item_name).strip()
+
+        # Check for category tag [Category] at end
+        cat_match = re.search(r"\[(.*?)\]\s*$", name_str)
+        if cat_match:
+            result["bim_category"] = cat_match.group(1).strip()
+
+        # Check for pattern ': Family - Type /' or ': Family - Type'
+        match = re.search(r":\s*([^-]+?)\s*-\s*([^/]+?)(?:\s*/|$)", name_str)
+        if match:
+            result["bim_family"] = match.group(1).strip()
+            result["bim_type"] = match.group(2).strip()
+
+        return result

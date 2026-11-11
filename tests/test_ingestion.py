@@ -9,15 +9,16 @@ from app.ingestion.ingestion_service import IngestionService
 
 
 def test_excel_loader_reads_designated_sheet():
-    """Verify loader reads first worksheet 'วัสดุพื้นฐาน' and extracts row counts."""
+    """Verify loader reads 3 worksheets and extracts element, material, and labor row counts."""
     excel_path = settings.get_excel_path()
     loader = ExcelLoader(excel_path)
     sections = loader.load_raw_sections()
 
-    assert sections["worksheet_name"] == "วัสดุพื้นฐาน"
-    assert len(sections["materials"]) >= 20
-    assert len(sections["labor"]) >= 5
-    assert sections["total_rows_read"] >= 32
+    assert "Element-based" in sections["worksheet_name"]
+    assert len(sections["elements"]) >= 500
+    assert len(sections["materials"]) >= 400
+    assert len(sections["labor"]) >= 200
+    assert sections["total_rows_read"] >= 1000
     assert len(sections["source_file_hash"]) == 64
 
 
@@ -39,14 +40,16 @@ def test_ingestion_service_e2e_and_idempotency(tmp_path: Path):
     report1 = svc.run_ingestion()
 
     assert report1.status == "success"
-    assert report1.materials_imported >= 20
-    assert report1.labor_imported >= 5
-    total = report1.materials_imported + report1.labor_imported
+    assert report1.elements_imported >= 500
+    assert report1.materials_imported >= 400
+    assert report1.labor_imported >= 200
+    total = report1.elements_imported + report1.materials_imported + report1.labor_imported
     assert report1.records_created == total
     assert report1.records_updated == 0
 
     # Verify counts in SQLite
     stats = sqlite_db.get_database_stats()
+    assert stats["total_element_records"] == report1.elements_imported
     assert stats["total_material_records"] == report1.materials_imported
     assert stats["total_labor_records"] == report1.labor_imported
     assert stats["total_records"] == total

@@ -96,11 +96,25 @@ class VectorDatabase:
 
     def _prepare_document_text(self, record: PriceRecord) -> str:
         """Create rich descriptive text for semantic indexing based strictly on factual source data."""
-        parts = [record.item_name]
+        if record.record_type == "element":
+            type_str = "องค์ประกอบอาคาร (Element)"
+        elif record.record_type == "material":
+            type_str = "วัสดุก่อสร้าง (Material)"
+        else:
+            type_str = "ค่าแรงงาน (Labor)"
+
+        parts = [f"ประเภท: {type_str}"]
+        if record.category:
+            parts.append(f"หมวดงาน: {record.category}")
+        if getattr(record, "bim_family", None):
+            parts.append(f"BIM Family: {record.bim_family}")
+        if getattr(record, "bim_type", None):
+            parts.append(f"BIM Type: {record.bim_type}")
+        parts.append(f"รายการ: {record.item_name}")
         if record.unit:
             parts.append(f"หน่วย: {record.unit}")
         if record.source_note:
-            parts.append(f"หมายเหตุ: {record.source_note}")
+            parts.append(f"ที่มา: {record.source_note}")
         return " | ".join(parts)
 
     def upsert_records(self, records: list[PriceRecord]) -> int:
@@ -123,6 +137,8 @@ class VectorDatabase:
                 "item_name": r.item_name,
                 "unit": r.unit,
                 "normalized_unit": r.normalized_unit,
+                "bim_family": getattr(r, "bim_family", None),
+                "bim_type": getattr(r, "bim_type", None),
                 "original_excel_row": r.original_excel_row,
                 "document": doc_text,
             }
@@ -163,8 +179,11 @@ class VectorDatabase:
             q_emb = np.ascontiguousarray([raw_query_emb], dtype=np.float32)
             faiss.normalize_L2(q_emb)
 
-            # Retrieve top candidates (search up to total items to allow post-filtering)
-            k_search = min(max(n_results * 5, 25), self.count())
+            # Retrieve top candidates (search full index when post-filtering by record_type or unit)
+            if (record_type and record_type != "all") or unit:
+                k_search = self.count()
+            else:
+                k_search = min(max(n_results * 10, 50), self.count())
             distances, indices = self.index.search(q_emb, k_search)
 
             candidates: list[dict[str, Any]] = []

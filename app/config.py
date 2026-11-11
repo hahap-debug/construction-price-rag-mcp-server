@@ -21,12 +21,12 @@ class AppSettings(BaseSettings):
 
     # Ingestion & Data Sources
     excel_file_path: str = Field(
-        default="data/Real_Price_Database_full.xlsx",
-        description="Path to the Excel file containing price data",
+        default="price_database.xlsx",
+        description="Path or filename to the Excel file containing price data",
     )
     excel_worksheet: str = Field(
-        default="วัสดุพื้นฐาน",
-        description="Target worksheet name (strict)",
+        default="Element-based",
+        description="Target primary worksheet name",
     )
 
     # Database
@@ -88,10 +88,15 @@ class AppSettings(BaseSettings):
     )
 
     def get_desktop_dir(self) -> Path:
-        """Resolve desktop folder for database storage."""
+        """Resolve desktop folder for database storage with graceful local fallback."""
         desktop_dir = Path.home() / "Desktop" / self.desktop_folder_name
-        desktop_dir.mkdir(parents=True, exist_ok=True)
-        return desktop_dir
+        try:
+            desktop_dir.mkdir(parents=True, exist_ok=True)
+            return desktop_dir
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Could not access Desktop directory '{desktop_dir}': {e}. Falling back to local data directory.")
+            fallback = PROJECT_ROOT / "data"
+            return fallback
 
     def get_sqlite_path(self) -> Path:
         """Resolve SQLite path on Desktop price_database folder or configured path."""
@@ -115,22 +120,30 @@ class AppSettings(BaseSettings):
         return p if p.is_absolute() else PROJECT_ROOT / p
 
     def get_excel_path(self) -> Path:
-        """Resolve Excel path, checking full, standard data/, and root locations."""
+        """Resolve Excel path, prioritizing Desktop price_database.xlsx, configured path, and data/."""
+        desktop_f = Path.home() / "Desktop" / "price_database.xlsx"
+        try:
+            if desktop_f.exists():
+                return desktop_f
+        except (PermissionError, OSError):
+            pass
+
         p = Path(self.excel_file_path)
-        if not p.is_absolute():
-            p = PROJECT_ROOT / p
-        if p.exists():
+        if p.is_absolute() and p.exists():
             return p
-        full_p = PROJECT_ROOT / "data" / "Real_Price_Database_full.xlsx"
-        if full_p.exists():
-            return full_p
-        legacy_p = PROJECT_ROOT / "data" / "Real_Price_Database.xlsx"
-        if legacy_p.exists():
-            return legacy_p
-        root_p = PROJECT_ROOT / "Real_Price_Database.xlsx"
-        if root_p.exists():
-            return root_p
-        return p
+        if (PROJECT_ROOT / p).exists():
+            return PROJECT_ROOT / p
+
+        candidates = [
+            PROJECT_ROOT / "data" / "price_database.xlsx",
+            PROJECT_ROOT / "data" / "Real_Price_Database_3Worksheets-v2.xlsx",
+            PROJECT_ROOT / "data" / "Real_Price_Database_full.xlsx",
+            PROJECT_ROOT / "data" / "Real_Price_Database.xlsx",
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
+        return p if p.is_absolute() else PROJECT_ROOT / p
 
 
 settings = AppSettings()

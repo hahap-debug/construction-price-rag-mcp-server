@@ -37,6 +37,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/faiss_index/
+data/price_database/
 data/chroma_db/
 data/test_*.db
 data/test_*chroma*

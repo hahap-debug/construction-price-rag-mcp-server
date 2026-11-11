@@ -37,12 +37,12 @@ class PriceService:
         self,
         query: str | None = None,
         material: str | None = None,
-        record_type: Literal["material", "labor", "all"] = "material",
+        record_type: Literal["element", "material", "labor", "all"] = "all",
         unit: str | None = None,
         as_of: str | None = None,
         max_results: int = 5,
     ) -> dict[str, Any]:
-        """Search construction material or labor prices using hybrid retrieval."""
+        """Search construction element, material, or labor prices using hybrid retrieval."""
         effective_query = (material or query or "").strip()
         if not effective_query:
             return {
@@ -54,7 +54,7 @@ class PriceService:
                 "message": "Query or material parameter cannot be empty.",
             }
 
-        valid_types = ("material", "labor", "all")
+        valid_types = ("element", "material", "labor", "all")
         if record_type not in valid_types:
             return {
                 "status": "error",
@@ -118,16 +118,12 @@ class PriceService:
     def match_material(
         self,
         material: str,
-        record_type: Literal["material", "labor", "all"] = "material",
+        record_type: Literal["element", "material", "labor", "all"] = "all",
         unit: str | None = None,
         top_k: int = 5,
         min_similarity: float = 0.0,
     ) -> dict[str, Any]:
-        """Match a material string (e.g. from BIM Element/Takeoff) against ChromaDB Vector Database.
-
-        Retrieves the most semantically similar materials directly from the vector index,
-        and retrieves verified price, unit, and source details from SQLite.
-        """
+        """Match a BIM element, material, or labor string against FAISS Vector Database."""
         clean_mat = (material or "").strip()
         if not clean_mat:
             return {
@@ -182,6 +178,8 @@ class PriceService:
                 "unit_price": str(rec.unit_price),
                 "market_min": str(rec.market_min) if rec.market_min else None,
                 "market_max": str(rec.market_max) if rec.market_max else None,
+                "bim_family": getattr(rec, "bim_family", None),
+                "bim_type": getattr(rec, "bim_type", None),
                 "currency": rec.currency,
                 "price_date": rec.price_date.isoformat() if rec.price_date else None,
                 "source_name": rec.source_name,
@@ -214,6 +212,7 @@ class PriceService:
             source_excel_file=source_file,
             source_worksheet=source_worksheet,
             source_file_hash=source_file_hash,
+            total_element_records=stats["total_element_records"],
             total_material_records=stats["total_material_records"],
             total_labor_records=stats["total_labor_records"],
             total_records=stats["total_records"],
@@ -223,7 +222,7 @@ class PriceService:
         return info.model_dump(mode="json")
 
     def rebuild_database(self, file_path: str | None = None) -> dict[str, Any]:
-        """Rebuild SQLite and FAISS database from scratch using 'วัสดุพื้นฐาน' worksheet of the specified Excel file."""
+        """Rebuild SQLite and FAISS database from scratch using Excel worksheets."""
         from app.ingestion.excel_loader import ExcelLoader, ExcelLoadError
         from app.ingestion.ingestion_service import IngestionService
 
@@ -268,14 +267,16 @@ class PriceService:
             "file_name": resolved_file.name,
             "file_path": str(resolved_file),
             "worksheet_used": self.sqlite_db.get_metadata("source_worksheet"),
+            "elements_imported": report.elements_imported,
             "materials_imported": report.materials_imported,
             "labor_imported": report.labor_imported,
             "total_records": stats["total_records"],
             "vector_index_size": vector_count,
             "issues": report.issues_found,
             "message": (
-                f"สร้างฐานข้อมูลราคาใหม่เรียบร้อยแล้ว: วัสดุ {report.materials_imported} รายการ, "
-                f"ค่าแรง {report.labor_imported} รายการ (รวม {stats['total_records']} รายการ) "
+                f"สร้างฐานข้อมูลราคาใหม่เรียบร้อยแล้ว: ชิ้นส่วน BIM (Element) {report.elements_imported} รายการ, "
+                f"วัสดุก่อสร้าง (Material) {report.materials_imported} รายการ, "
+                f"ค่าแรงงาน (Labor) {report.labor_imported} รายการ (รวม {stats['total_records']} รายการ) "
                 f"และอัปเดต FAISS Vector Index เรียบร้อย พร้อมค้นหาด้วย match_material ทันที"
             ),
         }
