@@ -29,26 +29,34 @@ def test_excel_loader_missing_file_raises():
         loader.load_raw_sections()
 
 
-def test_excel_loader_search_priority(monkeypatch, tmp_path: Path):
-    """Verify search priority: 1. Desktop -> 2. data/ project folder -> 3. Downloads."""
-    fake_desktop = tmp_path / "Desktop"
-    fake_downloads = tmp_path / "Downloads"
-    fake_desktop.mkdir()
-    fake_downloads.mkdir()
+def test_excel_loader_data_folder_dynamic_detection(tmp_path: Path):
+    """Verify dynamic .xlsx detection in data folder, ignoring ~$ lock files and picking newest."""
+    fake_data = tmp_path / "data"
+    fake_data.mkdir()
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    # 1. No excel file -> raises ExcelLoadError
+    with pytest.raises(ExcelLoadError):
+        ExcelLoader.resolve_excel_path(data_dir=fake_data)
 
-    # 1. File only in Downloads
-    dl_file = fake_downloads / "test_p_unique.xlsx"
-    dl_file.write_text("fake_content", encoding="utf-8")
-    resolved = ExcelLoader.resolve_excel_path("test_p_unique.xlsx")
-    assert resolved == dl_file.resolve()
+    # 2. Only temporary lock file ~$temp.xlsx -> still raises ExcelLoadError
+    temp_file = fake_data / "~$price.xlsx"
+    temp_file.write_text("lock", encoding="utf-8")
+    with pytest.raises(ExcelLoadError):
+        ExcelLoader.resolve_excel_path(data_dir=fake_data)
 
-    # 2. File in Desktop as well -> Desktop must win
-    dt_file = fake_desktop / "test_p_unique.xlsx"
-    dt_file.write_text("fake_content", encoding="utf-8")
-    resolved2 = ExcelLoader.resolve_excel_path("test_p_unique.xlsx")
-    assert resolved2 == dt_file.resolve()
+    # 3. Single .xlsx with arbitrary name -> successfully detected
+    real_file1 = fake_data / "my_custom_prices.xlsx"
+    real_file1.write_text("content1", encoding="utf-8")
+    resolved = ExcelLoader.resolve_excel_path(data_dir=fake_data)
+    assert resolved == real_file1.resolve()
+
+    # 4. Multiple files -> picks the most recently modified one
+    import time
+    time.sleep(0.05)
+    real_file2 = fake_data / "newer_prices_v2.xlsx"
+    real_file2.write_text("content2", encoding="utf-8")
+    resolved2 = ExcelLoader.resolve_excel_path(data_dir=fake_data)
+    assert resolved2 == real_file2.resolve()
 
 
 def test_ingestion_service_e2e_and_idempotency(tmp_path: Path):

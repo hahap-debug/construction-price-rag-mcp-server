@@ -39,11 +39,11 @@ def test_rebuild_price_database_validations(tmp_path):
     assert res1["status"] == "error"
     assert "ไม่ใช่ไฟล์ Excel" in res1["message"]
 
-    # 2. Missing file (searched desktop)
+    # 2. Missing file (searched data/ folder)
     res2 = svc.rebuild_database("ghost_file_123.xlsx")
     assert res2["status"] == "error"
     assert "ไม่พบไฟล์" in res2["message"]
-    assert "Desktop" in res2["message"]
+    assert "data" in res2["message"]
 
     # 3. Missing 'วัสดุพื้นฐาน' worksheet
     wb_file = tmp_path / "no_target_sheet.xlsx"

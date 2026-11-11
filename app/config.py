@@ -124,7 +124,7 @@ class AppSettings(BaseSettings):
         return p if p.is_absolute() else PROJECT_ROOT / p
 
     def get_excel_path(self) -> Path:
-        """Resolve Excel path with strict priority: 1. Desktop, 2. data/ project folder, 3. Downloads."""
+        """Resolve Excel path fixed to data/ project folder (detecting .xlsx dynamically)."""
         from app.ingestion.excel_loader import ExcelLoader
         try:
             return ExcelLoader.resolve_excel_path(self.excel_file_path)

@@ -24,84 +24,54 @@ class ExcelLoader:
         self.sheet_name = sheet_name
 
     @classmethod
-    def resolve_excel_path(cls, file_path: str | Path | None = None) -> Path:
-        """Resolve Excel path with strict search priority:
-        1. Desktop (Path.home() / Desktop)
-        2. Project data folder (PROJECT_ROOT / data)
-        3. Downloads (Path.home() / Downloads)
-        4. Explicit absolute path or project root
+    def resolve_excel_path(
+        cls,
+        file_path: str | Path | None = None,
+        data_dir: Path | None = None,
+    ) -> Path:
+        """Resolve Excel path fixed to the project's data/ folder.
+
+        Dynamically detects any .xlsx/.xls file in data/ (excluding ~$ temporary lock files).
+        If multiple Excel files are present, selects the most recently modified one.
         """
         from app.config import PROJECT_ROOT
 
-        # If explicit path provided and exists, honor it directly
+        target_dir = data_dir or (PROJECT_ROOT / "data")
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. If explicit absolute path or existing path provided, honor it directly
         if file_path and str(file_path).strip():
             raw = Path(file_path)
             if raw.is_absolute() and raw.exists():
                 return raw.resolve()
-            # Search strictly for the user-specified filename
-            names_to_search = [raw.name]
-        else:
-            # Default candidate filenames to search in priority order
-            names_to_search = ["price_database.xlsx", "Real_Price_Database_3Worksheets-v2.xlsx"]
+            if (target_dir / raw.name).exists():
+                return (target_dir / raw.name).resolve()
+            # If user explicitly asked for a specific non-default filename and it doesn't exist
+            if raw.name not in ("price_database.xlsx", "Real_Price_Database_3Worksheets-v2.xlsx", "Real_Price_Database.xlsx"):
+                raise ExcelLoadError(
+                    f"ไม่พบไฟล์ '{raw.name}' ในโฟลเดอร์ data/ ({target_dir})"
+                )
 
-        # 1. Desktop (Highest Priority: Desktop / OneDrive Desktop)
-        desktop_dirs = [
-            Path.home() / "Desktop",
-            Path.home() / "OneDrive" / "Desktop",
+        # 2. Dynamic detection: search target_dir for *.xlsx / *.xls excluding temporary lock files (~$*)
+        candidates = [
+            f for f in target_dir.glob("*.xlsx")
+            if not f.name.startswith("~$") and f.is_file()
+        ] + [
+            f for f in target_dir.glob("*.xls")
+            if not f.name.startswith("~$") and f.is_file()
         ]
-        for d in desktop_dirs:
-            for name in names_to_search:
-                cand = d / name
-                try:
-                    if cand.exists():
-                        logger.info(f"Auto-resolved Excel file from Desktop: {cand}")
-                        return cand.resolve()
-                except (PermissionError, OSError):
-                    pass
 
-        # 2. Project data folder (Second Priority)
-        data_dir = PROJECT_ROOT / "data"
-        for name in names_to_search:
-            cand = data_dir / name
-            try:
-                if cand.exists():
-                    logger.info(f"Auto-resolved Excel file from project data/ folder: {cand}")
-                    return cand.resolve()
-            except (PermissionError, OSError):
-                pass
+        if not candidates:
+            raise ExcelLoadError(
+                f"ไม่พบไฟล์ .xlsx หรือ .xls ในโฟลเดอร์ data/ ({target_dir})\n"
+                f"กรุณาวางไฟล์ Excel ราคาก่อสร้างไว้ในโฟลเดอร์ data/ ของโปรเจกต์"
+            )
 
-        # 3. Downloads folder (Third Priority)
-        downloads_dir = Path.home() / "Downloads"
-        for name in names_to_search:
-            cand = downloads_dir / name
-            try:
-                if cand.exists():
-                    logger.info(f"Auto-resolved Excel file from Downloads folder: {cand}")
-                    return cand.resolve()
-            except (PermissionError, OSError):
-                pass
-
-        # 4. Project root / Current working directory
-        for name in names_to_search:
-            cand = PROJECT_ROOT / name
-            if cand.exists():
-                logger.info(f"Auto-resolved Excel file from project root: {cand}")
-                return cand.resolve()
-            cand_cwd = Path.cwd() / name
-            if cand_cwd.exists():
-                logger.info(f"Auto-resolved Excel file from CWD: {cand_cwd}")
-                return cand_cwd.resolve()
-
-        searched_dirs = [
-            str(Path.home() / "Desktop"),
-            str(PROJECT_ROOT / "data"),
-            str(Path.home() / "Downloads"),
-            str(PROJECT_ROOT),
-        ]
-        searched_text = "\n - " + "\n - ".join(searched_dirs)
-        raise ExcelLoadError(
-            f"ไม่พบไฟล์ '{file_path or file_name}'\nระบบค้นหาตามลำดับความสำคัญแล้วแต่ไม่พบ (1. Desktop -> 2. data/ -> 3. Downloads):{searched_text}"
-        )
+        # If multiple files exist, sort by modification time (most recent first)
+        candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        selected = candidates[0]
+        logger.info(f"Auto-resolved Excel file dynamically from data/ folder: {selected.resolve()}")
+        return selected.resolve()
 
     @classmethod
     def validate_excel_file(cls, path: Path) -> None:
