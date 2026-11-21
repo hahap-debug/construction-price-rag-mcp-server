@@ -123,7 +123,7 @@ class PriceService:
         top_k: int = 5,
         min_similarity: float = 0.0,
     ) -> dict[str, Any]:
-        """Match a BIM element, material, or labor string against FAISS Vector Database."""
+        """Match a BIM element, material, or labor string using hybrid retrieval."""
         clean_mat = (material or "").strip()
         if not clean_mat:
             return {
@@ -134,62 +134,42 @@ class PriceService:
                 "message": "Parameter 'material' cannot be empty.",
             }
 
-        if self.vector_db is None and settings.enable_semantic_search:
-            try:
-                self.vector_db = VectorDatabase(
-                    persist_directory=settings.get_faiss_dir(),
-                )
-            except Exception as e:
-                logger.warning(f"Could not initialize FAISS VectorDatabase: {e}")
-
-        if self.vector_db is None:
-            return {
-                "status": "error",
-                "material_query": clean_mat,
-                "total_matches": 0,
-                "matches": [],
-                "message": "Vector database is not available.",
-            }
-
         effective_top_k = max(1, min(top_k, 50))
-        vector_candidates = self.vector_db.query_semantic(
+        response = self.retriever.retrieve(
             query=clean_mat,
-            n_results=effective_top_k,
-            record_type=record_type if record_type != "all" else None,
+            record_type=record_type,
             unit=unit,
+            max_results=effective_top_k,
         )
 
         matches: list[dict[str, Any]] = []
-        for cand in vector_candidates:
-            pid = cand.get("price_id")
-            score = cand.get("similarity_score", 0.0)
+        for result in response.results:
+            score = result.confidence_score
             if score < min_similarity:
                 continue
-
-            rec = self.sqlite_db.get_price_by_id(pid)
-            if not rec:
-                continue
+            source_record = self.sqlite_db.get_price_by_id(result.price_id)
 
             matches.append({
-                "price_id": rec.price_id,
-                "record_type": rec.record_type,
-                "item_name": rec.item_name,
-                "unit": rec.normalized_unit or rec.unit,
-                "raw_unit": rec.unit,
-                "unit_price": str(rec.unit_price),
-                "market_min": str(rec.market_min) if rec.market_min else None,
-                "market_max": str(rec.market_max) if rec.market_max else None,
-                "bim_family": getattr(rec, "bim_family", None),
-                "bim_type": getattr(rec, "bim_type", None),
-                "currency": rec.currency,
-                "price_date": rec.price_date.isoformat() if rec.price_date else None,
-                "source_name": rec.source_name,
-                "source_url": rec.source_url,
-                "source_note": rec.source_note,
-                "vat_included": rec.vat_included,
-                "transportation_included": rec.transportation_included,
+                "price_id": result.price_id,
+                "record_type": result.record_type,
+                "item_name": result.item_name,
+                "unit": result.unit,
+                "raw_unit": source_record.unit if source_record else result.unit,
+                "unit_price": str(result.unit_price),
+                "market_min": str(result.market_min) if result.market_min is not None else None,
+                "market_max": str(result.market_max) if result.market_max is not None else None,
+                "bim_family": result.bim_family,
+                "bim_type": result.bim_type,
+                "currency": result.currency,
+                "price_date": result.price_date,
+                "source_name": result.source_name,
+                "source_url": result.source_url,
+                "source_note": result.source_note,
+                "vat_included": result.vat_included,
+                "transportation_included": result.transportation_included,
                 "similarity_score": score,
-                "vector_distance": cand.get("distance", 0.0),
+                "vector_distance": None,
+                "retrieval_method": result.retrieval_method,
             })
 
         return {

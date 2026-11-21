@@ -23,7 +23,7 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
             "รับชื่อองค์ประกอบอาคาร BIM (Element เช่น ST_202A_RCColumn_Rectangular C12, ST_101A_RCBeam, Precast Pile, เสาเข็ม I-22, Monolithic Stair), "
             "สเปกวัสดุก่อสร้าง (Material เช่น เหล็กข้ออ้อย DB12, ปูนซีเมนต์ปอร์ตแลนด์, คอนกรีต 240 ksc), "
             "หรือค่าแรงงาน (Labor เช่น ค่าแรงก่ออิฐ, ผูกเหล็ก, ทดสอบความสมบูรณ์เสาเข็ม Seismic Test) "
-            "แล้วค้นหารายการที่ตรงกันใน Vector Database (FAISS) โดยใช้ Semantic Similarity "
+            "แล้วค้นหารายการที่ตรงกันด้วยการค้นหาแบบผสม (Exact, Fuzzy และ Semantic ผ่าน FAISS เมื่อเปิดใช้งาน) "
             "และส่งคืนรายการที่ตรงกันพร้อมราคาจริง หน่วย วันที่ และแหล่งอ้างอิงจากฐานข้อมูล"
         ),
     )
@@ -34,7 +34,7 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
         top_k: int = 5,
         min_similarity: float = 0.0,
     ) -> dict[str, Any]:
-        """ค้นหารายการชิ้นส่วน BIM, วัสดุ หรือค่าแรงที่ตรงกันใน Vector Database (FAISS).
+        """ค้นหารายการชิ้นส่วน BIM, วัสดุ หรือค่าแรงด้วย Exact, Fuzzy และ Semantic Search.
 
         Args:
             material: ชื่อหรือสเปกที่ต้องการค้นหา เช่น 'ST_202A_RCColumn_Rectangular C12', 'เหล็ก DB12', 'เสาเข็ม I-22', 'ค่าแรงผูกเหล็ก'
@@ -44,7 +44,8 @@ def register_price_tools(mcp: FastMCP, service: PriceService | None = None) -> N
             min_similarity: ค่าความเหมือนขั้นต่ำ 0.0 ถึง 1.0 (ค่าเริ่มต้น: 0.0)
 
         Returns:
-            Structured dictionary ประกอบด้วย status, material_query, total_matches, และ matches พร้อมราคาและแหล่งอ้างอิง
+            Structured dictionary ประกอบด้วย status, material_query, total_matches, และ matches พร้อมราคา,
+            แหล่งอ้างอิง, retrieval_method และ confidence score
         """
         return svc.match_material(
             material=material,
