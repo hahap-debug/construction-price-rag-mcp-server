@@ -358,7 +358,7 @@ class PriceService:
 
             resolved_unit = target_unit or (mat_rec.normalized_unit if mat_rec else (lab_rec.normalized_unit if lab_rec else "หน่วย"))
             cost_code = f"CST-{mat_rec.price_id if mat_rec else 'GEN'}-{lab_rec.price_id if lab_rec else 'GEN'}"
-            category = raw_item.get("boq_category") or (ele_rec.category if ele_rec else "03-CONCRETE")
+            category = raw_item.get("boq_category") or (ele_rec.category if ele_rec and ele_rec.category else (mat_rec.category if mat_rec and mat_rec.category else "03-CONCRETE"))
             std_label = raw_item.get("standard_label")
 
             cost_rec = CostRecord(
